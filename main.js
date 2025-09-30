@@ -154,6 +154,9 @@ document.getElementById('cameraInput').addEventListener('change', (e) => {
             
             // Add marker to map
             addPhotoMarker(currentTrail.layerGroup, positionArray, imageData);
+            
+            // Auto-save after adding photo
+            saveTrails();
         }
     };
     reader.readAsDataURL(file);
@@ -176,6 +179,11 @@ function startNewTrail() {
         photos: [],
         layerGroup: L.layerGroup().addTo(map)
     };
+    
+    // Immediately save the new trail as a draft
+    trails.push(currentTrail);
+    saveTrails();
+    updateTrailList();
     
     // Start watching position
     watchId = navigator.geolocation.watchPosition(
@@ -204,6 +212,9 @@ function startNewTrail() {
             }
             
             currentTrail.points.push(newPoint);
+            
+            // Auto-save after each point is added
+            saveTrails();
             
             // Center map on user
             map.panTo(newPoint);
@@ -234,8 +245,7 @@ function stopTrail() {
         watchId = null;
     }
     
-    // Save trail
-    trails.push(currentTrail);
+    // Final save
     saveTrails();
     updateTrailList();
     
@@ -259,6 +269,14 @@ function deleteCurrentTrail() {
     
     // Remove from map
     map.removeLayer(currentTrail.layerGroup);
+    
+    // Remove from trails array
+    const index = trails.findIndex(t => t.id === currentTrail.id);
+    if (index !== -1) {
+        trails.splice(index, 1);
+        saveTrails();
+        updateTrailList();
+    }
     
     currentTrail = null;
     
