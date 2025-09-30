@@ -266,10 +266,17 @@ function startNewTrail() {
     saveTrails();
     updateTrailList();
     
-    // Start watching position
+    // Start watching position with high accuracy settings
     watchId = navigator.geolocation.watchPosition(
         (position) => {
-            const { latitude, longitude } = position.coords;
+            const { latitude, longitude, accuracy } = position.coords;
+            
+            // Filter out inaccurate readings - only accept points with accuracy better than 20 meters
+            if (accuracy > 20) {
+                console.log(`Skipping inaccurate point: accuracy ${accuracy}m`);
+                return;
+            }
+            
             const newPoint = [latitude, longitude];
             
             // Update user marker
@@ -277,9 +284,15 @@ function startNewTrail() {
                 userMarker.setLatLng(newPoint);
             }
             
-            // Add point to trail
+            // Add point to trail only if it's far enough from the last point (min 2 meters)
             if (currentTrail.points.length > 0) {
                 const lastPoint = currentTrail.points[currentTrail.points.length - 1];
+                const distance = map.distance(lastPoint, newPoint);
+                
+                // Skip if the point is too close (reduces GPS jitter)
+                if (distance < 2) {
+                    return;
+                }
                 
                 // Create a polyline segment with changing color
                 const polyline = L.polyline([lastPoint, newPoint], {
@@ -306,7 +319,8 @@ function startNewTrail() {
         {
             enableHighAccuracy: true,
             maximumAge: 0,
-            timeout: 5000
+            timeout: 10000,
+            distanceFilter: 2
         }
     );
     
