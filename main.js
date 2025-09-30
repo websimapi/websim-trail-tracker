@@ -5,6 +5,56 @@ let trails = [];
 let watchId = null;
 let colorOffset = 0;
 
+// Load trails from localStorage
+function loadTrails() {
+    const saved = localStorage.getItem('trails');
+    if (saved) {
+        const savedTrails = JSON.parse(saved);
+        trails = savedTrails.map(trail => {
+            // Recreate layer group and polylines
+            const layerGroup = L.layerGroup().addTo(map);
+            
+            // Recreate polylines
+            for (let i = 0; i < trail.points.length - 1; i++) {
+                const polyline = L.polyline([trail.points[i], trail.points[i + 1]], {
+                    color: getTrailColor(i),
+                    weight: 4,
+                    opacity: 0.8
+                }).addTo(layerGroup);
+            }
+            
+            // Recreate photo markers
+            if (trail.photos) {
+                trail.photos.forEach(photo => {
+                    addPhotoMarker(layerGroup, photo.position, photo.imageData);
+                });
+            }
+            
+            // Hide layer by default
+            map.removeLayer(layerGroup);
+            
+            return {
+                ...trail,
+                startTime: new Date(trail.startTime),
+                layerGroup: layerGroup,
+                photos: trail.photos || []
+            };
+        });
+    }
+}
+
+// Save trails to localStorage
+function saveTrails() {
+    const trailsToSave = trails.map(trail => ({
+        id: trail.id,
+        name: trail.name,
+        startTime: trail.startTime,
+        points: trail.points,
+        photos: trail.photos || []
+    }));
+    localStorage.setItem('trails', JSON.stringify(trailsToSave));
+}
+
 // Initialize map
 function initMap() {
     map = L.map('map').setView([0, 0], 16);
@@ -43,6 +93,75 @@ function getTrailColor(offset) {
     return `hsl(${hue}, 70%, 50%)`;
 }
 
+// Add photo marker to map
+function addPhotoMarker(layerGroup, position, imageData) {
+    const photoIcon = L.divIcon({
+        className: 'photo-marker',
+        html: '<div class="photo-marker-inner">📷</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    });
+    
+    const marker = L.marker(position, { icon: photoIcon }).addTo(layerGroup);
+    
+    marker.on('click', () => {
+        showImageModal(imageData);
+    });
+    
+    return marker;
+}
+
+// Show image modal
+function showImageModal(imageData) {
+    const modal = document.getElementById('imageModal');
+    const modalImage = document.getElementById('modalImage');
+    modalImage.src = imageData;
+    modal.style.display = 'flex';
+}
+
+// Take photo
+function takePhoto() {
+    if (!currentTrail) return;
+    
+    const cameraInput = document.getElementById('cameraInput');
+    cameraInput.click();
+}
+
+// Handle photo capture
+document.getElementById('cameraInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file || !currentTrail) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const imageData = event.target.result;
+        
+        // Get current position
+        if (userMarker) {
+            const position = userMarker.getLatLng();
+            const positionArray = [position.lat, position.lng];
+            
+            // Add photo to current trail
+            if (!currentTrail.photos) {
+                currentTrail.photos = [];
+            }
+            
+            currentTrail.photos.push({
+                position: positionArray,
+                imageData: imageData,
+                timestamp: new Date()
+            });
+            
+            // Add marker to map
+            addPhotoMarker(currentTrail.layerGroup, positionArray, imageData);
+        }
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    e.target.value = '';
+});
+
 // Start recording a new trail
 function startNewTrail() {
     if (currentTrail) return;
@@ -54,6 +173,7 @@ function startNewTrail() {
         startTime: new Date(),
         points: [],
         polylines: [],
+        photos: [],
         layerGroup: L.layerGroup().addTo(map)
     };
     
@@ -101,6 +221,7 @@ function startNewTrail() {
     // Update UI
     document.getElementById('newTrailBtn').style.display = 'none';
     document.getElementById('stopTrailBtn').style.display = 'flex';
+    document.getElementById('cameraBtn').style.display = 'flex';
     document.getElementById('deleteTrailBtn').style.display = 'flex';
 }
 
@@ -115,6 +236,7 @@ function stopTrail() {
     
     // Save trail
     trails.push(currentTrail);
+    saveTrails();
     updateTrailList();
     
     currentTrail = null;
@@ -122,6 +244,7 @@ function stopTrail() {
     // Update UI
     document.getElementById('newTrailBtn').style.display = 'flex';
     document.getElementById('stopTrailBtn').style.display = 'none';
+    document.getElementById('cameraBtn').style.display = 'none';
     document.getElementById('deleteTrailBtn').style.display = 'none';
 }
 
@@ -142,6 +265,7 @@ function deleteCurrentTrail() {
     // Update UI
     document.getElementById('newTrailBtn').style.display = 'flex';
     document.getElementById('stopTrailBtn').style.display = 'none';
+    document.getElementById('cameraBtn').style.display = 'none';
     document.getElementById('deleteTrailBtn').style.display = 'none';
 }
 
@@ -153,6 +277,7 @@ function deleteSavedTrail(trailId) {
     const trail = trails[index];
     map.removeLayer(trail.layerGroup);
     trails.splice(index, 1);
+    saveTrails();
     updateTrailList();
 }
 
@@ -214,12 +339,24 @@ function toggleTrailVisibility(trailId) {
     });
 }
 
+// Close modal
+document.querySelector('.modal-close').addEventListener('click', () => {
+    document.getElementById('imageModal').style.display = 'none';
+});
+
+document.getElementById('imageModal').addEventListener('click', (e) => {
+    if (e.target.id === 'imageModal') {
+        document.getElementById('imageModal').style.display = 'none';
+    }
+});
+
 // Event listeners
 document.getElementById('newTrailBtn').addEventListener('click', startNewTrail);
 document.getElementById('stopTrailBtn').addEventListener('click', stopTrail);
+document.getElementById('cameraBtn').addEventListener('click', takePhoto);
 document.getElementById('deleteTrailBtn').addEventListener('click', deleteCurrentTrail);
 
 // Initialize
 initMap();
+loadTrails();
 updateTrailList();
-
