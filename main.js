@@ -5,23 +5,6 @@ let trails = [];
 let watchId = null;
 let colorOffset = 0;
 
-// Chunk size for localStorage (approximately 50KB per chunk)
-const CHUNK_SIZE = 50000;
-
-// Split data into chunks for localStorage
-function chunkData(data) {
-    const chunks = [];
-    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-        chunks.push(data.slice(i, i + CHUNK_SIZE));
-    }
-    return chunks;
-}
-
-// Reconstruct data from chunks
-function unchunkData(chunks) {
-    return chunks.join('');
-}
-
 // Load trails from localStorage
 function loadTrails() {
     const saved = localStorage.getItem('trails');
@@ -40,18 +23,10 @@ function loadTrails() {
                 }).addTo(layerGroup);
             }
             
-            // Recreate photo markers with reconstructed images
+            // Recreate photo markers
             if (trail.photos) {
                 trail.photos.forEach(photo => {
-                    // Reconstruct image from chunks if needed
-                    let imageData = photo.imageData;
-                    if (photo.imageChunks && photo.imageChunks.length > 0) {
-                        imageData = unchunkData(photo.imageChunks);
-                    }
-                    addPhotoMarker(layerGroup, photo.position, imageData);
-                    // Update photo object with reconstructed data
-                    photo.imageData = imageData;
-                    delete photo.imageChunks;
+                    addPhotoMarker(layerGroup, photo.position, photo.imageData);
                 });
             }
             
@@ -75,29 +50,9 @@ function saveTrails() {
         name: trail.name,
         startTime: trail.startTime,
         points: trail.points,
-        photos: (trail.photos || []).map(photo => {
-            // Chunk large images for storage
-            const chunks = chunkData(photo.imageData);
-            return {
-                position: photo.position,
-                imageChunks: chunks,
-                timestamp: photo.timestamp
-            };
-        })
+        photos: trail.photos || []
     }));
-    
-    try {
-        localStorage.setItem('trails', JSON.stringify(trailsToSave));
-    } catch (e) {
-        console.error('Error saving to localStorage:', e);
-        // If storage is full, try to save without photos
-        alert('Storage full. Saving trails without photos.');
-        const trailsWithoutPhotos = trailsToSave.map(t => ({
-            ...t,
-            photos: []
-        }));
-        localStorage.setItem('trails', JSON.stringify(trailsWithoutPhotos));
-    }
+    localStorage.setItem('trails', JSON.stringify(trailsToSave));
 }
 
 // Initialize map
@@ -199,9 +154,6 @@ document.getElementById('cameraInput').addEventListener('change', (e) => {
             
             // Add marker to map
             addPhotoMarker(currentTrail.layerGroup, positionArray, imageData);
-            
-            // Save immediately after adding photo
-            saveTrails();
         }
     };
     reader.readAsDataURL(file);
