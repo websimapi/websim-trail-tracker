@@ -5,6 +5,46 @@ let trails = [];
 let watchId = null;
 let colorOffset = 0;
 
+// Compress image before storing
+function compressImage(dataUrl, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            // Calculate new dimensions
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to compressed JPEG
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve(compressedDataUrl);
+        };
+        img.src = dataUrl;
+    });
+}
+
+// Check localStorage size
+function getLocalStorageSize() {
+    let total = 0;
+    for (let key in localStorage) {
+        if (localStorage.hasOwnProperty(key)) {
+            total += localStorage[key].length + key.length;
+        }
+    }
+    return total;
+}
+
 // Load trails from localStorage
 function loadTrails() {
     const saved = localStorage.getItem('trails');
@@ -45,14 +85,52 @@ function loadTrails() {
 
 // Save trails to localStorage
 function saveTrails() {
-    const trailsToSave = trails.map(trail => ({
-        id: trail.id,
-        name: trail.name,
-        startTime: trail.startTime,
-        points: trail.points,
-        photos: trail.photos || []
-    }));
-    localStorage.setItem('trails', JSON.stringify(trailsToSave));
+    try {
+        const trailsToSave = trails.map(trail => ({
+            id: trail.id,
+            name: trail.name,
+            startTime: trail.startTime,
+            points: trail.points,
+            photos: trail.photos || []
+        }));
+        localStorage.setItem('trails', JSON.stringify(trailsToSave));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+            console.error('Storage quota exceeded. Attempting to save without oldest photos...');
+            
+            // Try to save by removing photos from oldest trails
+            const trailsToSave = trails.map((trail, index) => {
+                // Keep photos only for the most recent 3 trails
+                const shouldKeepPhotos = index >= trails.length - 3;
+                return {
+                    id: trail.id,
+                    name: trail.name,
+                    startTime: trail.startTime,
+                    points: trail.points,
+                    photos: shouldKeepPhotos ? (trail.photos || []) : []
+                };
+            });
+            
+            try {
+                localStorage.setItem('trails', JSON.stringify(trailsToSave));
+                alert('Storage limit reached. Photos from older trails were removed to save your current trail.');
+            } catch (e2) {
+                console.error('Still not enough space. Saving trail data only...');
+                // Last resort: save only trail points, no photos
+                const minimalTrails = trails.map(trail => ({
+                    id: trail.id,
+                    name: trail.name,
+                    startTime: trail.startTime,
+                    points: trail.points,
+                    photos: []
+                }));
+                localStorage.setItem('trails', JSON.stringify(minimalTrails));
+                alert('Storage critically low. Only trail paths were saved.');
+            }
+        } else {
+            throw e;
+        }
+    }
 }
 
 // Initialize map
@@ -128,13 +206,16 @@ function takePhoto() {
 }
 
 // Handle photo capture
-document.getElementById('cameraInput').addEventListener('change', (e) => {
+document.getElementById('cameraInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file || !currentTrail) return;
     
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
         const imageData = event.target.result;
+        
+        // Compress the image
+        const compressedImage = await compressImage(imageData, 800, 0.7);
         
         // Get current position
         if (userMarker) {
@@ -148,12 +229,12 @@ document.getElementById('cameraInput').addEventListener('change', (e) => {
             
             currentTrail.photos.push({
                 position: positionArray,
-                imageData: imageData,
+                imageData: compressedImage,
                 timestamp: new Date()
             });
             
             // Add marker to map
-            addPhotoMarker(currentTrail.layerGroup, positionArray, imageData);
+            addPhotoMarker(currentTrail.layerGroup, positionArray, compressedImage);
             
             // Auto-save after adding photo
             saveTrails();
